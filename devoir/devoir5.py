@@ -14,7 +14,7 @@ data = pd.read_csv(url)
 # Liste des municipalites a filtrer
 municipalities = [
     'Anderlecht', 'Auderghem', 'Berchem-Sainte-Agathe', 'Bruxelles', 'Etterbeek',
-    'Evere', 'Forest', 'Ganshoren', 'Ixelles', 'Jette', 'Koekelberg',
+    'Evere', 'Forest (Bruxelles-Capitale)', 'Ganshoren', 'Ixelles', 'Jette', 'Koekelberg',
     'Molenbeek-Saint-Jean', 'Saint-Gilles', 'Saint-Josse-ten-Noode', 'Schaerbeek',
     'Uccle', 'Watermael-Boitsfort', 'Woluwe-Saint-Lambert', 'Woluwe-Saint-Pierre'
 ]
@@ -53,41 +53,43 @@ num_communes = len(commune_mapping)
 
 prior_probabilities = np.full(num_communes, 1 / num_communes)
 max_iterations = 100  # Nombre maximal d'iterations pour l'algorithme de traitement
-tolerance = 1e-12  # Seuil de tolerance pour verifier la convergence de l'algorithme
+tolerance = 1e-24  # Seuil de tolerance pour verifier la convergence de l'algorithme
 
 #Formule pour Espérance
+# Ajuster la fonction d'étape E pour une meilleure mise à jour basée sur les cas réels
 def etape_E(transition_matrix_for_day, daily_data, commune_mapping, num_communes):
     # Initialisation de la matrice des transitions estimées
     estimated_transitions = np.zeros((num_communes, num_communes))
-
     
-    if daily_data:  #daily_data n'est pas vide
-        daily_data_for_day = next(iter(daily_data.values()))  # Obtient les données du premier (et unique) élément
-    else
-        daily_data = 0
+    if daily_data:  # Vérifie que les données quotidiennes ne sont pas vides
+        daily_data_for_day = next(iter(daily_data.values()))  # Obtient les données du jour concerné
 
         for i in range(num_communes):
             commune_from = list(commune_mapping.keys())[list(commune_mapping.values()).index(i)]
-            cases_from = daily_data_for_day.get(commune_from, 0)  # Nombre de cas dans la commune d'origine pour ce jour
-
-            # Calcul du total des cas pour la journée
-            total_cases = sum(daily_data_for_day.values())
+            cases_from = daily_data_for_day.get(commune_from, 0) + 1  # Ajout d'une constante pour éviter la division par zéro
 
             for j in range(num_communes):
-                if total_cases > 0:
-                    # Estimation simplifiée : la probabilité de transition est proportionnelle aux cas observés
-                    estimated_transitions[i, j] = (cases_from / total_cases) * transition_matrix_for_day[i, j]
+                commune_to = list(commune_mapping.keys())[list(commune_mapping.values()).index(j)]
+                cases_to = daily_data_for_day.get(commune_to, 0) + 1  # De même, ajout d'une constante
+
+                if cases_from == cases_to:
+                    # Si le nombre de cas est le même pour les communes de départ et d'arrivée,
+                    # considérez cela comme un indicateur de taux de contamination interne élevé ou de stase.
+                    # Vous pouvez ajuster cette valeur comme bon vous semble.
+                    estimated_transitions[i, j] = cases_from  # ou toute autre métrique logique
                 else:
-                    # S'il n'y a pas de cas, nous gardons la matrice de transition telle quelle
-                    estimated_transitions[i, j] = transition_matrix_for_day[i, j]
+                    # Sinon, utilisez la différence absolue des cas comme auparavant
+                    difference_cases = abs(cases_to - cases_from)
+                    estimated_transitions[i, j] = difference_cases
 
         # Normalisation pour que chaque ligne somme à 1
         for i in range(num_communes):
             row_sum = np.sum(estimated_transitions[i])
-            if row_sum > 0:
+            if row_sum > 0:  # Pour éviter la division par zéro dans la normalisation
                 estimated_transitions[i] /= row_sum
 
     return estimated_transitions
+    
 
 #Formule pour la maximisation
 def etape_M(estimated_transitions, num_communes):
@@ -132,6 +134,7 @@ for single_date in pd.date_range(start_date, end_date):
             # Vérifier la convergence
             delta = np.linalg.norm(new_transition_matrix - transition_matrix_for_day)
             if delta < tolerance:
+                print(delta-tolerance)
                 print(f'Convergence atteinte après {iteration + 1} itérations pour la date {date_key}.')
                 break
             transition_matrix_for_day = new_transition_matrix
@@ -146,7 +149,7 @@ for single_date in pd.date_range(start_date, end_date):
 #     print(f"\nDate: {date}")
 #     print("Matrice de transition:")
 #     for row in matrix:
-#         # Imprime chaque ligne de la matrice de transition, formatée pour une meilleure lisibilité
+# #         # Imprime chaque ligne de la matrice de transition, formatée pour une meilleure lisibilité
 #         print(' '.join(['{:.4f}'.format(val) for val in row]))
 
 # # Creer un graphe dirige
@@ -184,3 +187,15 @@ with pd.ExcelWriter('Test.xlsx', engine='openpyxl') as writer:
         df.to_excel(writer, sheet_name=date)
 
 print("Les matrices de transition ont été enregistrées dans le fichier Excel 'Test.xlsx'")
+
+def prevoir_cases_suivant(daily_case_matrices, daily_transition_matrices):
+    predicted_cases = {}
+    sorted_dates = sorted(daily_case_matrices.keys())
+    
+    for i, date in enumerate(sorted_dates[:-1]):  # Pas de prédiction pour le dernier jour car nous n'avons pas de matrice de transition
+        current_cases = np.array(list(daily_case_matrices[date].values()))
+        next_date = sorted_dates[i + 1]
+        transition_matrix = daily_transition_matrices[date]
+        predicted_cases[next_date] = np.dot(transition_matrix, current_cases)
+        
+    return predicted_cases
