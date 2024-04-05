@@ -23,8 +23,8 @@ municipalities = [
 data['DATE'] = pd.to_datetime(data['DATE'])
 
 # Definir la plage de dates
-start_date = datetime(2020, 9, 1)
-end_date = datetime(2020, 12, 31)
+start_date = datetime(2020, 5, 1)
+end_date = datetime(2022, 12, 31)
 
 # Initialiser le dictionnaire de donnees
 data_dict = defaultdict(lambda: {municipality: 0 for municipality in municipalities})
@@ -63,7 +63,7 @@ def etape_E(transition_matrix_for_day, daily_data, commune_mapping, num_communes
     
     if daily_data:  #daily_data n'est pas vide
         daily_data_for_day = next(iter(daily_data.values()))  # Obtient les données du premier (et unique) élément
-    else
+    else:
         daily_data = 0
 
         for i in range(num_communes):
