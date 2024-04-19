@@ -12,7 +12,7 @@ data_reelle['CASES'] = data_reelle['CASES'].replace({'<5': '3'}).astype(int)
 data_real_dict = data_reelle.groupby(['DATE', 'TX_DESCR_FR'])['CASES'].sum().to_dict()
 
 # Lire les matrices de probabilités à partir du fichier Excel
-all_matrices = pd.read_excel('C:/Users/lucie/Desktop/python_devoir/devoir/Test.xlsx', sheet_name=None)
+all_matrices = pd.read_excel('Test.xlsx', sheet_name=None)
 
 # Initialiser un dictionnaire pour les estimations
 estimations = {}
