@@ -9,8 +9,6 @@ excel_file_path = 'cleaned_data.xlsx'
 # Charger les données depuis le fichier Excel
 data = pd.read_excel(excel_file_path)
 
-
-
 # Définition des proportions initiales pour chaque commune à partir de la répartition réelle de la population
 proportions_dict = {
     "Anderlecht": 0.101190902038963,
@@ -35,8 +33,7 @@ proportions_dict = {
 }
 
 # Remplir les noms de commune manquants et trier les données
-data['TX_DESCR_FR'] = data['TX_DESCR_FR'].fillna(method='ffill')
-data_sorted = data.sort_values(by=['NIS5', 'DATE'])
+data_sorted = data.sort_values(by=['TX_DESCR_FR', 'DATE'])
 
 # Création d'un mappage des noms de commune aux indices numériques
 # Liste des communes
@@ -58,8 +55,8 @@ em_data = data_sorted[['COMMUNE_INDEX', 'CASES']].to_numpy()
 # Nombre de communes
 n_communes = len(commune_to_index)
 
-print(type(commune_to_index))
-print(commune_to_index)
+# print(type(commune_to_index))
+# print(commune_to_index)
 
 def initialize_parameters(commune_to_index, proportions_dict):
     """
@@ -86,7 +83,7 @@ def initialize_parameters(commune_to_index, proportions_dict):
 
 
 # Initialisation des paramètres
-parameters = initialize_parameters(n_communes, proportions_dict)
+parameters = initialize_parameters(commune_to_index, proportions_dict)
 
 
 def e_step(data, parameters):
@@ -102,8 +99,18 @@ def e_step(data, parameters):
     proportions = parameters['proportions']
     transition_matrix = parameters['transition_matrix']
 
-    # Calcul des probabilités pour chaque point de données
-    responsibilities = np.dot(data, transition_matrix) * proportions
+    print(transition_matrix)
+
+    if data.shape[1] != transition_matrix.shape[0]:
+        raise ValueError("Le nombre de colonnes de 'data' doit correspondre au nombre de lignes de 'transition_matrix'")
+
+    # Calcul des probabilités pour chaque point de données en utilisant la matrice de transition
+    probabilities = np.dot(data, transition_matrix)
+
+    # Multiplication par les proportions pour obtenir les responsabilités non normalisées
+    responsibilities = probabilities * proportions.reshape(1, -1)  # Reshape proportions for correct broadcasting
+
+    # Normalisation des responsabilités
     responsibilities = responsibilities / responsibilities.sum(axis=1, keepdims=True)
 
     return responsibilities
@@ -174,13 +181,17 @@ def em_algorithm(data, init_params, start_date, end_date, max_iter=100, tol=1e-6
     transition_matrices = {}
 
     for day in pd.date_range(start=start_date, end=end_date):
-        daily_data = filtered_data[filtered_data['DATE'] == day]
-        if daily_data.empty:
-            continue
+        # Filtrer les données pour obtenir uniquement celles du jour spécifique
+        daily_data = filtered_data[filtered_data['DATE'] == day.strftime('%Y-%m-%d')]
+        if not daily_data.empty:
+            cases_vector = daily_data[['commune1', 'commune2', ..., 'commune19']].values.reshape(1, -1)
+            # Vérifier que la dimension est correcte
+            if cases_vector.shape[1] != parameters['transition_matrix'].shape[0]:
+                raise ValueError("Dimensions incompatibles entre les données du jour et la matrice de transition.")
         
-        responsibilities = e_step(daily_data, parameters)
-        parameters = m_step(daily_data, responsibilities)
-        log_likelihood = compute_log_likelihood(daily_data, parameters)
+        responsibilities = e_step(cases_vector, parameters)
+        parameters = m_step(cases_vector, responsibilities)
+        log_likelihood = compute_log_likelihood(cases_vector, parameters)
         log_likelihood_history.append(log_likelihood)
         
         # Enregistrement de la matrice de transition pour le jour actuel
@@ -196,4 +207,4 @@ def em_algorithm(data, init_params, start_date, end_date, max_iter=100, tol=1e-6
 # Exécution de l'algorithme EM avec les dates spécifiées
 start_date = '2022-01-01'  # Exemple de date de début
 end_date = '2022-01-10'    # Exemple de date de fin
-final_params, log_likelihood = em_algorithm(data, init_params, start_date, end_date)
+final_params, log_likelihood = em_algorithm(data, parameters, start_date, end_date)
